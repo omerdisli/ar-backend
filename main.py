@@ -49,12 +49,12 @@ async def upload_video(file: UploadFile = File(...)):
 
     if model_glb_url:
         return {
-            "status": "success",
-            "model_url": model_glb_url,
-            "message": "Model başarıyla oluşturuldu"
-        }
+    "status": "success",
+    "model_url": model_glb_url,
+    "message": "Model başarıyla oluşturuldu"
+    }
     else:
         return {
             "status": "pending",
             "message": "Model hâlâ işleniyor, lütfen bekleyin..."
-        }s
+        }
