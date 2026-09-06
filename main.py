@@ -6,7 +6,7 @@ from fastapi import FastAPI, UploadFile, File
 app = FastAPI()
 
 # Kiri Engine veya seçtiğiniz fotogrametri servisinin API anahtarı
-PHOTOGRAMMETRY_API_KEY = "BURAYA_API_KEY_YAZIN"
+PHOTOGRAMMETRY_API_KEY = kiri_aDIrqoy2KiRoxSu_KEFMhQ9r4q1dUWspuM0M7mWPcoA
 
 @app.get("/")
 def read_root():
