@@ -4,14 +4,19 @@ import os
 
 app = FastAPI()
 
-# Fotoğrafların kaydedileceği klasör
-UPLOAD_DIR = "uploaded_plates"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+@app.get("/")
+def read_root():
+    return {"status": "Gastrohackers 3D AI Backend Aktif!"}
 
-@app.post("/upload-photos")
-async def upload_photos():
-    return {"status": "success", "message": "Fotograf paketi basariyla alindi!"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.post("/upload-video")
+async def upload_video(file: UploadFile = File(...)):
+    # Gelen .mp4 videosunu geçici kaydet
+    video_path = f"temp_{file.filename}"
+    with open(video_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {
+        "status": "success",
+        "message": "Video başarıyla sunucuya ulaştı!",
+        "filename": file.filename
+    }
