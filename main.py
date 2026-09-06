@@ -1,67 +1,60 @@
-import os
 import time
 import requests
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, UploadFile, HTTPException
 
 app = FastAPI()
 
-# Kiri Engine veya seçtiğiniz fotogrametri servisinin API anahtarı
-PHOTOGRAMMETRY_API_KEY = kiri_aDIrqoy2KiRoxSu_KEFMhQ9r4q1dUWspuM0M7mWPcoA
-
-@app.get("/")
-def read_root():
-    return {"status": "Gastrohackers 3D Photogrammetry Backend Aktif!"}
+KIRI_API_KEY = "SİZİN_KIRI_ENGINE_API_KEY_BURAYA"
 
 @app.post("/upload-video")
 async def upload_video(file: UploadFile = File(...)):
-    video_path = f"temp_{file.filename}"
+    # 1. Adım: Unity'den gelen videoyu geçici olarak kaydet veya bellekten oku
+    video_bytes = await file.read()
     
-    try:
-        # 1. Gelen videoyu geçici olarak diske kaydet
-        with open(video_path, "wb") as buffer:
-            buffer.write(await file.read())
+    # 2. Adım: Videoyu Kiri Engine API'ye gönder (Örn: Video Upload Endpoint)
+    # Kiri Engine dokümantasyonuna göre istek atılır:
+    url = "https://api.kiriengine.app/api/v1/open/photo/video"
+    headers = {"Authorization": f"Bearer {KIRI_API_KEY}"}
+    files = {"videoFile": (file.filename, video_bytes, "video/mp4")}
+    data = {"fileFormat": "glb", "modelQuality": "1"} # GLB formatı seçilir
+    
+    response = requests.post(url, headers=headers, files=files, data=data)
+    
+    if response.status_code != 200:
+        return {"status": "error", "message": "Kiri Engine'e video yüklenemedi."}
+    
+    res_json = response.json()
+    # Kiri Engine'den gelen benzersiz görev ID'si (serialize / task_id) alınır
+    task_id = res_json.get("data", {}).get("serialize") 
+    
+    if not task_id:
+        return {"status": "error", "message": "Görev ID alınamadı."}
 
-        # 2. Videoyu Fotogrametri API'sine gönder
-        headers = {"Authorization": f"Bearer {PHOTOGRAMMETRY_API_KEY}"}
+    # 3. Adım: Modelin işlenmesini bekleyin veya Task ID'yi Unity'ye dönüp Unity'nin sormasını sağlayın.
+    # (Eğer sunucu bekleyecekse aşağıdaki döngü kurulur - Render timeout sürelerine dikkat edilmelidir)
+    
+    model_glb_url = None
+    max_try = 30  # Örneğin 30 kez kontrol et (~2.5 dakika)
+    
+    for _ in range(max_try):
+        time.sleep(5) # 5 saniyede bir kontrol et
+        status_url = f"https://api.kiriengine.app/api/v1/open/task/{task_id}"
+        status_res = requests.get(status_url, headers=headers)
+        status_data = status_res.json()
         
-        with open(video_path, "rb") as f:
-            files = {"file": (file.filename, f, "video/mp4")}
-            # 3D Tarama görevi başlatma isteği
-            upload_res = requests.post(
-                "https://api.kiriengine.app/v1/reconstruct",
-                headers=headers,
-                files=files,
-                data={"file_type": "video", "output_format": "glb"}
-            ).json()
+        # İşlem tamamlandıysa model indirme linkini al
+        if status_data.get("data", {}).get("status") == "COMPLETED":
+            model_glb_url = status_data.get("data", {}).get("modelUrl")
+            break
 
-        task_id = upload_res.get("task_id")
-
-        # 3. Modelin oluşmasını bekle (Polling)
-        model_url = ""
-        for _ in range(60):  # Maksimum 5 dakika (60 x 5 saniye)
-            time.sleep(5)
-            status_res = requests.get(
-                f"https://api.kiriengine.app/v1/tasks/{task_id}",
-                headers=headers
-            ).json()
-
-            if status_res.get("status") == "SUCCESS":
-                model_url = status_res.get("glb_url")
-                break
-            elif status_res.get("status") == "FAILED":
-                raise Exception("Fotogrametri işleme hatası oluştu.")
-
-        # 4. Geçici video dosyasını temizle
-        if os.path.exists(video_path):
-            os.remove(video_path)
-
-        # 5. Unity'ye üretilen 1:1 .glb modelinin indirme bağlantısını dön
+    if model_glb_url:
         return {
             "status": "success",
-            "model_url": model_url
+            "model_url": model_glb_url,
+            "message": "Model başarıyla oluşturuldu"
         }
-
-    except Exception as e:
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        return {"status": "error", "message": str(e)}
+    else:
+        return {
+            "status": "pending",
+            "message": "Model hâlâ işleniyor, lütfen bekleyin..."
+        }s
