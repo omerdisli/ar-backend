@@ -15,7 +15,8 @@ async def upload_video(file: UploadFile = File(...)):
     # Kiri Engine dokümantasyonuna göre istek atılır:
     url = "https://api.kiriengine.app/api/v1/open/photo/video"
     headers = {"Authorization": f"Bearer {KIRI_API_KEY}"}
-    files = {"videoFile": (file.filename, video_bytes, "video/mp4")}
+    safe_filename = "dish_video.mp4"
+    files = {"videoFile": (safe_filename, video_bytes, "video/mp4")}
     data = {"fileFormat": "glb", "modelQuality": "1"} # GLB formatı seçilir
     
     response = requests.post(url, headers=headers, files=files, data=data)
