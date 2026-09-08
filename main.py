@@ -13,7 +13,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-KIRI_API_KEY = os.getenv("kiri_TEp_5nYWdOzxyUNqphkhIZZnTbZLApCCy96G0v9XafI")
+KIRI_API_KEY = os.getenv("KIRI_API_KEY")
 KIRI_BASE_URL = "https://api.kiriengine.app/api/v1/open"
 
 
