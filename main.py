@@ -37,12 +37,12 @@ async def upload_video(file: UploadFile = File(...)):
             "Authorization": f"Bearer {KIRI_API_KEY}"
         }
         
-        # Kiri Engine API dökümanına göre dosya anahtarı 'videoFile' olmalıdır
+        # Kiri Engine API 'videoFile' parametre adı bekliyor
         files = {
             "videoFile": (file.filename, file_bytes, file.content_type)
         }
         
-        # GLB formatı ve işleme parametreleri
+        # Format ve kalite parametreleri
         data = {
             "fileFormat": "glb",
             "modelQuality": "1",
@@ -64,12 +64,29 @@ async def upload_video(file: UploadFile = File(...)):
             res_data = {}
 
         if response.status_code == 200 and res_data.get("code") == 200:
-            task_id = res_data.get("data", {}).get("task_id") or res_data.get("data", {}).get("taskId")
-            return {
-                "status": "processing",
-                "task_id": task_id,
-                "message": "Video Kiri Engine'e başarıyla iletildi."
-            }
+            data_obj = res_data.get("data")
+            task_id = None
+
+            # Kiri Engine'in dönebileceği tüm task_id formatlarını tarıyoruz
+            if isinstance(data_obj, dict):
+                task_id = data_obj.get("task_id") or data_obj.get("taskId") or data_obj.get("id") or data_obj.get("taskID")
+            elif isinstance(data_obj, str):
+                task_id = data_obj
+            
+            if not task_id:
+                task_id = res_data.get("task_id") or res_data.get("taskId") or res_data.get("id")
+
+            if task_id:
+                return {
+                    "status": "processing",
+                    "task_id": task_id,
+                    "message": "Video Kiri Engine'e başarıyla iletildi."
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Task ID okunamadı. Kiri Yanıtı: {response.text}"
+                }
         else:
             error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Kiri Engine bilinmeyen hata."
             return {
