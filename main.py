@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Render Environment Variables (Ortam Değişkenleri) üzerinden API anahtarını alıyoruz
+# Render Environment Variables üzerinden API anahtarını alıyoruz
 KIRI_API_KEY = os.getenv("KIRI_API_KEY")
 KIRI_BASE_URL = "https://api.kiriengine.app/api/v1/open"
 
@@ -27,12 +27,11 @@ def read_root():
 @app.post("/upload-video")
 async def upload_video(file: UploadFile = File(...)):
     if not KIRI_API_KEY:
+        print("[ERROR] KIRI_API_KEY sunucuda tanımlı değil!")
         return {"status": "error", "message": "KIRI_API_KEY sunucuda tanımlı değil!"}
 
     try:
-        # Unity'den gelen video verisini okuyoruz
         file_bytes = await file.read()
-
         url = f"{KIRI_BASE_URL}/photo/video"
         headers = {
             "Authorization": f"Bearer {KIRI_API_KEY}"
@@ -41,9 +40,18 @@ async def upload_video(file: UploadFile = File(...)):
             "file": (file.filename, file_bytes, file.content_type)
         }
 
-        # Kiri Engine API'sine videoyu iletiyoruz
-        response = requests.post(url, headers=headers, files=files, timeout=60)
-        res_data = response.json()
+        print(f"[LOG] Kiri Engine'e istek atılıyor: {url}")
+        print(f"[LOG] Dosya Adı: {file.filename}, Boyut: {len(file_bytes)} bytes")
+
+        response = requests.post(url, headers=headers, files=files, timeout=90)
+
+        print(f"[LOG] Kiri Engine HTTP Status: {response.status_code}")
+        print(f"[LOG] Kiri Engine Yanıt Metni: {response.text}")
+
+        try:
+            res_data = response.json()
+        except Exception:
+            res_data = {}
 
         if response.status_code == 200 and res_data.get("code") == 200:
             task_id = res_data.get("data", {}).get("task_id") or res_data.get("data", {}).get("taskId")
@@ -53,13 +61,15 @@ async def upload_video(file: UploadFile = File(...)):
                 "message": "Video Kiri Engine'e başarıyla iletildi."
             }
         else:
+            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Kiri Engine bilinmeyen hata."
             return {
                 "status": "error",
-                "message": res_data.get("msg", "Kiri Engine'e video yüklenemedi.")
+                "message": f"Kiri Engine Hatası ({response.status_code}): {error_msg}"
             }
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        print(f"[EXCEPT] Sunucu içi hata: {str(e)}")
+        return {"status": "error", "message": f"Internal Server Error: {str(e)}"}
 
 
 @app.get("/check-status/{task_id}")
@@ -74,13 +84,17 @@ def check_status(task_id: str):
         }
 
         response = requests.get(url, headers=headers, timeout=30)
-        res_data = response.json()
+        
+        try:
+            res_data = response.json()
+        except Exception:
+            res_data = {}
 
         if response.status_code == 200 and res_data.get("code") == 200:
             data = res_data.get("data", {})
             task_status = str(data.get("status", "")).upper()
 
-            if task_status == "SUCCESS" or data.get("model_url"):
+            if task_status in ["SUCCESS", "FINISHED"] or data.get("model_url"):
                 model_url = data.get("model_url") or data.get("fileUrl") or data.get("glbUrl")
                 return {
                     "status": "success",
@@ -90,17 +104,18 @@ def check_status(task_id: str):
             elif task_status in ["FAILED", "ERROR"]:
                 return {
                     "status": "error",
-                    "message": "Kiri Engine model işleme hatası."
+                    "message": "Kiri Engine model işleme hatası verdi."
                 }
             else:
                 return {
                     "status": "processing",
-                    "message": "Model işleniyor..."
+                    "message": f"Model işleniyor... (Durum: {task_status})"
                 }
         else:
+            error_msg = res_data.get("msg") or res_data.get("message") or "Durum sorgulanamadı."
             return {
                 "status": "error",
-                "message": res_data.get("msg", "Durum sorgulanamadı.")
+                "message": error_msg
             }
 
     except Exception as e:
