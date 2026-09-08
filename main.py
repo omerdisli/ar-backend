@@ -36,14 +36,24 @@ async def upload_video(file: UploadFile = File(...)):
         headers = {
             "Authorization": f"Bearer {KIRI_API_KEY}"
         }
+        
+        # Kiri Engine API dökümanına göre dosya anahtarı 'videoFile' olmalıdır
         files = {
-            "file": (file.filename, file_bytes, file.content_type)
+            "videoFile": (file.filename, file_bytes, file.content_type)
+        }
+        
+        # GLB formatı ve işleme parametreleri
+        data = {
+            "fileFormat": "glb",
+            "modelQuality": "1",
+            "textureQuality": "1",
+            "isMask": "1"
         }
 
         print(f"[LOG] Kiri Engine'e istek atılıyor: {url}")
         print(f"[LOG] Dosya Adı: {file.filename}, Boyut: {len(file_bytes)} bytes")
 
-        response = requests.post(url, headers=headers, files=files, timeout=90)
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=90)
 
         print(f"[LOG] Kiri Engine HTTP Status: {response.status_code}")
         print(f"[LOG] Kiri Engine Yanıt Metni: {response.text}")
