@@ -105,15 +105,15 @@ def check_status(task_id: str):
 
     try:
         url = f"{KIRI_BASE_URL}/photo/get-task-status"
+        # Kiri Engine sorgulama için sadece 'serialize' anahtarını ister
         params = {
-            "serialize": task_id,
-            "task_id": task_id
+            "serialize": task_id
         }
         headers = {
             "Authorization": f"Bearer {KIRI_API_KEY}"
         }
 
-        print(f"[LOG] Durum sorgulanıyor. Task ID/Serialize: {task_id}")
+        print(f"[LOG] Durum sorgulanıyor. Serialize ID: {task_id}")
         response = requests.get(url, headers=headers, params=params, timeout=30)
         
         print(f"[LOG] Status HTTP Kodu: {response.status_code}")
@@ -126,7 +126,7 @@ def check_status(task_id: str):
 
         if response.status_code == 200 and res_data.get("code") == 200:
             data = res_data.get("data", {})
-            raw_status = data.get("status") or data.get("state") or data.get("taskStatus")
+            raw_status = data.get("status") if data.get("status") is not None else data.get("state")
             task_status_str = str(raw_status).upper()
 
             model_url = (
