@@ -3,6 +3,7 @@ from fastapi import FastAPI, File, UploadFile
 
 app = FastAPI()
 
+# API Key'inizi tırnak işaretlerini silmeden araya yazın
 KIRI_API_KEY = "BURAYA_KIRI_ENGINE_API_KEY_YAZ"
 
 @app.post("/upload-video")
@@ -12,7 +13,6 @@ async def upload_video(file: UploadFile = File(...)):
     url = "https://api.kiriengine.app/api/v1/open/photo/video"
     headers = {"Authorization": f"Bearer {KIRI_API_KEY}"}
     
-    # Türkçe karakter hatasını önlemek için sabit güvenli isim
     safe_filename = "dish_video.mp4"
     files = {"videoFile": (safe_filename, video_bytes, "video/mp4")}
     data = {"fileFormat": "glb", "modelQuality": "1"}
@@ -28,7 +28,6 @@ async def upload_video(file: UploadFile = File(...)):
     if not task_id:
         return {"status": "error", "message": "Görev ID alınamadı."}
 
-    # Beklemeden Task ID dönüyoruz, Render timeout yemez!
     return {
         "status": "processing",
         "task_id": task_id,
