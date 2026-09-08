@@ -37,12 +37,10 @@ async def upload_video(file: UploadFile = File(...)):
             "Authorization": f"Bearer {KIRI_API_KEY}"
         }
         
-        # Kiri Engine API 'videoFile' parametre adı bekliyor
         files = {
             "videoFile": (file.filename, file_bytes, file.content_type)
         }
         
-        # Format ve kalite parametreleri
         data = {
             "fileFormat": "glb",
             "modelQuality": "1",
@@ -51,11 +49,8 @@ async def upload_video(file: UploadFile = File(...)):
         }
 
         print(f"[LOG] Kiri Engine'e istek atılıyor: {url}")
-        print(f"[LOG] Dosya Adı: {file.filename}, Boyut: {len(file_bytes)} bytes")
-
         response = requests.post(url, headers=headers, files=files, data=data, timeout=90)
 
-        print(f"[LOG] Kiri Engine HTTP Status: {response.status_code}")
         print(f"[LOG] Kiri Engine Yanıt Metni: {response.text}")
 
         try:
@@ -67,14 +62,19 @@ async def upload_video(file: UploadFile = File(...)):
             data_obj = res_data.get("data")
             task_id = None
 
-            # Kiri Engine'in dönebileceği tüm task_id formatlarını tarıyoruz
             if isinstance(data_obj, dict):
-                task_id = data_obj.get("task_id") or data_obj.get("taskId") or data_obj.get("id") or data_obj.get("taskID")
+                # Kiri Engine'in döndürdüğü 'serialize' anahtarını öncelikli kontrol ediyoruz
+                task_id = (
+                    data_obj.get("serialize") 
+                    or data_obj.get("task_id") 
+                    or data_obj.get("taskId") 
+                    or data_obj.get("id")
+                )
             elif isinstance(data_obj, str):
                 task_id = data_obj
             
             if not task_id:
-                task_id = res_data.get("task_id") or res_data.get("taskId") or res_data.get("id")
+                task_id = res_data.get("serialize") or res_data.get("task_id") or res_data.get("taskId")
 
             if task_id:
                 return {
@@ -105,7 +105,7 @@ def check_status(task_id: str):
         return {"status": "error", "message": "KIRI_API_KEY sunucuda tanımlı değil!"}
 
     try:
-        url = f"{KIRI_BASE_URL}/photo/get-task-status?task_id={task_id}"
+        url = f"{KIRI_BASE_URL}/photo/get-task-status?task_id={task_id}&serialize={task_id}"
         headers = {
             "Authorization": f"Bearer {KIRI_API_KEY}"
         }
