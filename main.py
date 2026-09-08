@@ -1,10 +1,11 @@
 import os
-import requests
-from fastapi import FastAPI, UploadFile, File
+import httpx
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Gastrohackers 3D AI Backend")
+app = FastAPI(title="Gastrohackers Polycam API Backend")
 
+# Unity / Web erişimi için CORS ayarları
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,168 +14,141 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-KIRI_API_KEY = os.getenv("KIRI_API_KEY")
-KIRI_BASE_URL = "https://api.kiriengine.app/api/v1/open"
-
+# Render Environment Variables üzerinden Polycam API Key okunur
+POLYCAM_API_KEY = os.getenv("POLYCAM_API_KEY", "")
+POLYCAM_BASE_URL = "https://api.poly.cam/v1"
 
 @app.get("/")
 def read_root():
-    return {"status": "Gastrohackers 3D AI Backend Aktif!"}
-
+    return {
+        "status": "Gastrohackers 3D AI Backend Aktif!",
+        "engine": "Polycam API"
+    }
 
 @app.post("/upload-video")
 async def upload_video(file: UploadFile = File(...)):
-    if not KIRI_API_KEY:
-        print("[ERROR] KIRI_API_KEY sunucuda tanımlı değil!")
-        return {"status": "error", "message": "KIRI_API_KEY sunucuda tanımlı değil!"}
+    """
+    Unity'den gelen MP4 videosunu alır ve Polycam API sunucularına işlenmek üzere gönderir.
+    """
+    if not POLYCAM_API_KEY:
+        raise HTTPException(
+            status_code=500, 
+            detail="POLYCAM_API_KEY ortam değişkeni ayarlanmamış!"
+        )
 
     try:
-        file_bytes = await file.read()
-        url = f"{KIRI_BASE_URL}/photo/video"
-        headers = {
-            "Authorization": f"Bearer {KIRI_API_KEY}"
-        }
+        # Video içeriğini oku
+        contents = await file.read()
         
+        headers = {
+            "Authorization": f"Bearer {POLYCAM_API_KEY}"
+        }
+
         files = {
-            "videoFile": (file.filename, file_bytes, file.content_type)
-        }
-        
-        data = {
-            "fileFormat": "glb",
-            "modelQuality": "1",
-            "textureQuality": "1",
-            "isMask": "1"
+            "file": (file.filename, contents, file.content_type or "video/mp4")
         }
 
-        print(f"[LOG] Kiri Engine'e istek atılıyor: {url}")
-        response = requests.post(url, headers=headers, files=files, data=data, timeout=90)
-
-        print(f"[LOG] Kiri Engine Yanıt Metni: {response.text}")
-
-        try:
-            res_data = response.json()
-        except Exception:
-            res_data = {}
-
-        if response.status_code == 200 and res_data.get("code") == 200:
-            data_obj = res_data.get("data")
-            task_id = None
-
-            if isinstance(data_obj, dict):
-                task_id = (
-                    data_obj.get("serialize") 
-                    or data_obj.get("task_id") 
-                    or data_obj.get("taskId") 
-                    or data_obj.get("id")
-                )
-            elif isinstance(data_obj, str):
-                task_id = data_obj
-            
-            if not task_id:
-                task_id = res_data.get("serialize") or res_data.get("task_id") or res_data.get("taskId")
-
-            if task_id:
-                return {
-                    "status": "processing",
-                    "task_id": task_id,
-                    "message": "Video Kiri Engine'e başarıyla iletildi."
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": f"Task ID okunamadı. Kiri Yanıtı: {response.text}"
-                }
-        else:
-            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Kiri Engine bilinmeyen hata."
-            return {
-                "status": "error",
-                "message": f"Kiri Engine Hatası ({response.status_code}): {error_msg}"
-            }
-
-    except Exception as e:
-        print(f"[EXCEPT] Sunucu içi hata: {str(e)}")
-        return {"status": "error", "message": f"Internal Server Error: {str(e)}"}
-
-
-@app.get("/check-status/{task_id}")
-def check_status(task_id: str):
-    if not KIRI_API_KEY:
-        return {"status": "error", "message": "KIRI_API_KEY sunucuda tanımlı değil!"}
-
-    try:
-        url = f"{KIRI_BASE_URL}/photo/get-task-status"
-        headers = {
-            "Authorization": f"Bearer {KIRI_API_KEY}"
-        }
-
-        print(f"[LOG] Durum sorgulanıyor: {task_id}")
-        
-        # 1. Deneme: 'serialize' parametresi ile sorgula
-        response = requests.get(url, headers=headers, params={"serialize": task_id}, timeout=30)
-        
-        # 2. Deneme: Yanıt 200 değilse 'task_id' parametresi ile dene
-        if response.status_code != 200:
-            print(f"[LOG] 'serialize' başarısız ({response.status_code}), 'task_id' deneniyor...")
-            response = requests.get(url, headers=headers, params={"task_id": task_id}, timeout=30)
-
-        # 3. Deneme: Yine 200 değilse 'taskId' parametresi ile dene
-        if response.status_code != 200:
-            print(f"[LOG] 'task_id' başarısız ({response.status_code}), 'taskId' deneniyor...")
-            response = requests.get(url, headers=headers, params={"taskId": task_id}, timeout=30)
-
-        print(f"[LOG] Son Status Kodu: {response.status_code}")
-        print(f"[LOG] Status Yanıt Metni: {response.text}")
-
-        # Eğer Kiri Engine başlangıçta geçici 500 veya 404 dönerse Unity akışını bozmamak için 'processing' dönüyoruz
-        if response.status_code in [500, 404, 502, 503]:
-            return {
-                "status": "processing",
-                "message": f"Kiri Engine görevi hazırlıyor ({response.status_code}), bekleniyor..."
-            }
-
-        try:
-            res_data = response.json()
-        except Exception:
-            res_data = {}
-
-        if response.status_code == 200 and res_data.get("code") == 200:
-            data = res_data.get("data", {})
-            raw_status = data.get("status") if data.get("status") is not None else data.get("state")
-            task_status_str = str(raw_status).upper()
-
-            model_url = (
-                data.get("model_url") 
-                or data.get("fileUrl") 
-                or data.get("glbUrl") 
-                or data.get("downloadUrl")
-                or data.get("resultUrl")
+        # Polycam ham veri / video yükleme endpoint'ine istek at
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{POLYCAM_BASE_URL}/captures/upload",
+                headers=headers,
+                files=files
             )
 
-            if task_status_str in ["SUCCESS", "FINISHED", "2", "COMPLETED"] or model_url:
-                return {
-                    "status": "success",
-                    "model_url": model_url,
-                    "message": "Model hazır!"
-                }
-            elif task_status_str in ["FAILED", "ERROR", "3", "4"]:
+            if response.status_code not in [200, 201]:
                 return {
                     "status": "error",
-                    "message": f"Kiri Engine işleme hatası (Durum karesi: {raw_status})."
+                    "message": f"Polycam API Hatası ({response.status_code}): {response.text}"
                 }
-            else:
+
+            data = response.json()
+            # Polycam'den dönen işlem/tarama ID'si
+            task_id = data.get("id") or data.get("capture_id") or data.get("task_id")
+
+            if not task_id:
                 return {
-                    "status": "processing",
-                    "message": f"Model işleniyor... (Durum: {raw_status})"
+                    "status": "error",
+                    "message": f"Polycam Yanıtından Task ID alınamadı: {data}"
                 }
-        else:
-            # Dönen yanıt 'processing' aşamasındaysa veya henüz hazır değilse süreci devam ettir
-            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Durum bekleniyor..."
+
             return {
                 "status": "processing",
-                "message": f"Görsel işleniyor: {error_msg}"
+                "task_id": task_id,
+                "message": "Video Polycam sunucularına yüklendi, işleniyor..."
             }
 
     except Exception as e:
-        print(f"[EXCEPT] Check Status Hata: {str(e)}")
-        # Ağ kesintilerinde polling durmasın diye geçici processing dönülür
-        return {"status": "processing", "message": f"İstek yeniden deneniyor: {str(e)}"}
+        return {
+            "status": "error",
+            "message": f"Sunucu iç hatası: {str(e)}"
+        }
+
+@app.check_status = app.get("/check-status/{task_id}")
+@app.get("/check-status/{task_id}")
+async def check_status(task_id: string):
+    """
+    Polycam API'den 3D model çıkarma işleminin durumunu sorgular.
+    Tamamlandığında .glb modelinin URL'sini döndürür.
+    """
+    if not POLYCAM_API_KEY:
+        raise HTTPException(
+            status_code=500, 
+            detail="POLYCAM_API_KEY ortam değişkeni ayarlanmamış!"
+        )
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {POLYCAM_API_KEY}"
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{POLYCAM_BASE_URL}/captures/{task_id}",
+                headers=headers
+            )
+
+            if response.status_code != 200:
+                return {
+                    "status": "error",
+                    "message": f"Polycam Durum Hatası ({response.status_code}): {response.text}"
+                }
+
+            data = response.json()
+            processing_status = data.get("status", "").lower()
+
+            # Polycam işlemi tamamlandıysa
+            if processing_status in ["completed", "success", "finished"]:
+                # GLB formatındaki model linkini bul
+                exports = data.get("exports", {})
+                glb_url = exports.get("glb") or data.get("glb_url") or data.get("download_url")
+
+                if glb_url:
+                    return {
+                        "status": "success",
+                        "model_url": glb_url,
+                        "message": "3D Model başarıyla üretildi!"
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Polycam işlemi tamamlandı ancak GLB indirme linki bulunamadı."
+                    }
+
+            elif processing_status in ["failed", "error"]:
+                return {
+                    "status": "error",
+                    "message": f"Polycam işleme hatası: {data.get('error', 'Bilinmeyen hata')}"
+                }
+
+            else:
+                return {
+                    "status": "processing",
+                    "message": f"Görsel işleniyor... (Polycam Durum: {processing_status or 'İşleniyor'})"
+                }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Bağlantı sorgu hatası: {str(e)}"
+        }
