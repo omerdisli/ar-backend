@@ -4,7 +4,7 @@ from fastapi import FastAPI, File, UploadFile
 app = FastAPI()
 
 # API Key'inizi tırnak işaretlerini silmeden araya yazın
-KIRI_API_KEY = "https://ar-backend-aoqa.onrender.com/"
+KIRI_API_KEY = os.getenv("KIRI_API_KEY")
 @app.post("/upload-video")
 async def upload_video(file: UploadFile = File(...)):
     video_bytes = await file.read()
