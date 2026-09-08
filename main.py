@@ -1,5 +1,6 @@
 import os
 import requests
+import asyncio
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,11 +17,9 @@ app.add_middleware(
 KIRI_API_KEY = os.getenv("KIRI_API_KEY")
 KIRI_BASE_URL = "https://api.kiriengine.app/api/v1/open"
 
-
 @app.get("/")
 def read_root():
     return {"status": "Gastrohackers 3D AI Backend Aktif!"}
-
 
 @app.post("/upload-video")
 async def upload_video(file: UploadFile = File(...)):
@@ -45,7 +44,10 @@ async def upload_video(file: UploadFile = File(...)):
             "isMask": "1"
         }
 
-        response = requests.post(url, headers=headers, files=files, data=data, timeout=90)
+        # KRİTİK DÜZELTME: İşlemi arka plana atarak sunucunun kilitlenmesini engelledik
+        response = await asyncio.to_thread(
+            requests.post, url, headers=headers, files=files, data=data, timeout=120
+        )
 
         try:
             res_data = response.json()
@@ -76,20 +78,13 @@ async def upload_video(file: UploadFile = File(...)):
                     "message": "Video Kiri Engine'e başarıyla iletildi."
                 }
             else:
-                return {
-                    "status": "error",
-                    "message": f"Task ID okunamadı. Kiri Yanıtı: {response.text}"
-                }
+                return {"status": "error", "message": f"Task ID okunamadı. Yanıt: {response.text}"}
         else:
-            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Kiri Engine bilinmeyen hata."
-            return {
-                "status": "error",
-                "message": f"Kiri Engine Hatası ({response.status_code}): {error_msg}"
-            }
+            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Bilinmeyen hata."
+            return {"status": "error", "message": f"Kiri Engine Hatası ({response.status_code}): {error_msg}"}
 
     except Exception as e:
         return {"status": "error", "message": f"Internal Server Error: {str(e)}"}
-
 
 @app.get("/check-status/{task_id}")
 def check_status(task_id: str):
@@ -98,23 +93,16 @@ def check_status(task_id: str):
 
     try:
         url = f"{KIRI_BASE_URL}/photo/get-task-status"
-        headers = {
-            "Authorization": f"Bearer {KIRI_API_KEY}"
-        }
+        headers = {"Authorization": f"Bearer {KIRI_API_KEY}"}
 
         response = requests.get(url, headers=headers, params={"serialize": task_id}, timeout=30)
-        
         if response.status_code != 200:
             response = requests.get(url, headers=headers, params={"task_id": task_id}, timeout=30)
-
         if response.status_code != 200:
             response = requests.get(url, headers=headers, params={"taskId": task_id}, timeout=30)
 
         if response.status_code in [500, 404, 502, 503]:
-            return {
-                "status": "processing",
-                "message": f"Kiri Engine görevi hazırlıyor ({response.status_code}), bekleniyor..."
-            }
+            return {"status": "processing", "message": f"Kiri Engine görevi hazırlıyor ({response.status_code})..."}
 
         try:
             res_data = response.json()
@@ -127,35 +115,18 @@ def check_status(task_id: str):
             task_status_str = str(raw_status).upper()
 
             model_url = (
-                data.get("model_url") 
-                or data.get("fileUrl") 
-                or data.get("glbUrl") 
-                or data.get("downloadUrl")
-                or data.get("resultUrl")
+                data.get("model_url") or data.get("fileUrl") or data.get("glbUrl") or data.get("downloadUrl")
             )
 
             if task_status_str in ["SUCCESS", "FINISHED", "2", "COMPLETED"] or model_url:
-                return {
-                    "status": "success",
-                    "model_url": model_url,
-                    "message": "Model hazır!"
-                }
+                return {"status": "success", "model_url": model_url, "message": "Model hazır!"}
             elif task_status_str in ["FAILED", "ERROR", "3", "4"]:
-                return {
-                    "status": "error",
-                    "message": f"Kiri Engine işleme hatası (Durum: {raw_status})."
-                }
+                return {"status": "error", "message": f"Kiri Engine işleme hatası (Durum: {raw_status})."}
             else:
-                return {
-                    "status": "processing",
-                    "message": f"Model işleniyor... (Durum: {raw_status})"
-                }
+                return {"status": "processing", "message": f"Model işleniyor... (Durum: {raw_status})"}
         else:
-            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Durum bekleniyor..."
-            return {
-                "status": "processing",
-                "message": f"Görsel işleniyor: {error_msg}"
-            }
+            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Bekleniyor..."
+            return {"status": "processing", "message": f"Görsel işleniyor: {error_msg}"}
 
     except Exception as e:
         return {"status": "processing", "message": f"İstek yeniden deneniyor: {str(e)}"}
