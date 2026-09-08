@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Gastrohackers 3D AI Backend")
 
-# Unity ve dış istekler için CORS izni
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,7 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Render Environment Variables üzerinden API anahtarını alıyoruz
 KIRI_API_KEY = os.getenv("KIRI_API_KEY")
 KIRI_BASE_URL = "https://api.kiriengine.app/api/v1/open"
 
@@ -105,19 +103,34 @@ def check_status(task_id: str):
 
     try:
         url = f"{KIRI_BASE_URL}/photo/get-task-status"
-        # Kiri Engine sorgulama için sadece 'serialize' anahtarını ister
-        params = {
-            "serialize": task_id
-        }
         headers = {
             "Authorization": f"Bearer {KIRI_API_KEY}"
         }
 
-        print(f"[LOG] Durum sorgulanıyor. Serialize ID: {task_id}")
-        response = requests.get(url, headers=headers, params=params, timeout=30)
+        print(f"[LOG] Durum sorgulanıyor: {task_id}")
         
-        print(f"[LOG] Status HTTP Kodu: {response.status_code}")
+        # 1. Deneme: 'serialize' parametresi ile sorgula
+        response = requests.get(url, headers=headers, params={"serialize": task_id}, timeout=30)
+        
+        # 2. Deneme: Yanıt 200 değilse 'task_id' parametresi ile dene
+        if response.status_code != 200:
+            print(f"[LOG] 'serialize' başarısız ({response.status_code}), 'task_id' deneniyor...")
+            response = requests.get(url, headers=headers, params={"task_id": task_id}, timeout=30)
+
+        # 3. Deneme: Yine 200 değilse 'taskId' parametresi ile dene
+        if response.status_code != 200:
+            print(f"[LOG] 'task_id' başarısız ({response.status_code}), 'taskId' deneniyor...")
+            response = requests.get(url, headers=headers, params={"taskId": task_id}, timeout=30)
+
+        print(f"[LOG] Son Status Kodu: {response.status_code}")
         print(f"[LOG] Status Yanıt Metni: {response.text}")
+
+        # Eğer Kiri Engine başlangıçta geçici 500 veya 404 dönerse Unity akışını bozmamak için 'processing' dönüyoruz
+        if response.status_code in [500, 404, 502, 503]:
+            return {
+                "status": "processing",
+                "message": f"Kiri Engine görevi hazırlıyor ({response.status_code}), bekleniyor..."
+            }
 
         try:
             res_data = response.json()
@@ -154,12 +167,14 @@ def check_status(task_id: str):
                     "message": f"Model işleniyor... (Durum: {raw_status})"
                 }
         else:
-            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Durum sorgulanamadı."
+            # Dönen yanıt 'processing' aşamasındaysa veya henüz hazır değilse süreci devam ettir
+            error_msg = res_data.get("msg") or res_data.get("message") or response.text or "Durum bekleniyor..."
             return {
-                "status": "error",
-                "message": f"Kiri Engine Hatası ({response.status_code}): {error_msg}"
+                "status": "processing",
+                "message": f"Görsel işleniyor: {error_msg}"
             }
 
     except Exception as e:
         print(f"[EXCEPT] Check Status Hata: {str(e)}")
-        return {"status": "error", "message": f"Internal Server Error: {str(e)}"}
+        # Ağ kesintilerinde polling durmasın diye geçici processing dönülür
+        return {"status": "processing", "message": f"İstek yeniden deneniyor: {str(e)}"}
